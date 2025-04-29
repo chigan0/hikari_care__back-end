@@ -1,0 +1,424 @@
+{% load i18n %}
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>OKS PANEL | {% trans 'Infrastructure and project location editor' %}</title>
+	<link rel="shortcut icon" href="{% static 'img/favicon.ico' %}" type="image/png">
+	<link rel="stylesheet" href="{% static 'css/reset.css' %}">
+	<link rel="stylesheet" href="{% static 'css/utility_styles.css' %}">
+	<link rel="stylesheet" href="{% static 'css/style.css' %}">
+	<link rel="stylesheet" href="{% static 'css/infra_location_map.css' %}">
+	<script src="{% static 'js/widgets_script.js' %}"></script>
+	<script src="https://api-maps.yandex.ru/2.1/?lang=ru_RU&apikey=1da3d274-6cf6-41b7-9120-9a0e5e6111b7"></script>
+	<script src="{% static 'js/vue.global.prod.js' %}"></script>
+	<script> const { createApp, ref, reactive, computed } = Vue; </script>
+</head>
+
+<style>
+	.project-placemark{
+		width: 82px;
+		height: 82px;
+		
+		background-size: cover; /* Заставляем картинку полностью покрыть балун */
+		border-radius: 50%; /* Делаем балун круглым */
+		position: relative;
+		transition: transform 0.3s ease, opacity 0.3s ease !important; /* Плавная анимация появления */
+		transform: scale(1); /* Изначально скрыт (уменьшен) */
+		opacity: 1; /* Прозрачность 0 */
+		border: 2px solid #222445;
+	}
+
+	.infra-location-map__push{
+		position: fixed;
+		top: 0;
+		left: 50%;
+		padding: 16px 32px;
+		background: #222445;
+		z-index: 50;
+		transform: translate(-25%, 100%) scale(0);
+		border-radius: 16px;
+		color: #fff;
+		opacity: 0;
+		transition: all .3s;
+	}
+
+	.push__active{
+		opacity: 1;
+		transform: translate(-25%, 100%) scale(1);
+	}
+
+	#map *{
+		transition: all 0s !important;
+	}
+</style>
+
+<body>
+	{% csrf_token %} 
+
+	<div id="infra-location-map">
+		<div class="infra-location-map__push">
+			<p>{* pushTxt *}</p>
+		</div>
+
+		<Transitiom>
+			<div class="cate-add" v-if="addState">
+				<div class="cate-add__mask" @click="addStateSwitch"></div>
+				<div class="cate-add__block">
+					<div class="cate-add__container">
+						
+						<div class="cate-add__header flex-container-combo2 gap-16">
+							<h2 class="cate-add__header__title-txt">{% trans 'Available categories list' %}</h2>
+						</div>
+
+						<div class="cate-add__body">
+							<div class="cate-add__body__btn-list flex-container-combo2 gap-16 wrap-flex">
+
+								<div v-bind:class="['cate-add__body__btn-item', 'unselectable', 'flex-container-combo2', 'gap-12', {'cate-add__body__btn-item-act': placemarkIsExist(cateId)}]"
+									 v-for="meta, cateId in cateMeta" 
+									 v-bind:key="cateId" 
+									 @click="addCate(cateId)">
+									<img :src="meta.icon" alt="btn-icon">
+									<p>{* meta.title *}</p>
+								</div>
+
+							</div>
+
+						</div>
+
+					</div>
+				</div>
+			</div>
+		</Transitiom>
+
+
+		<main class="main">
+			<div class="main__container flex-container">
+				<div class="main__cate__block">
+					<div class="main__cate__container flex-container flex-column">
+
+						<div class="main__cate__head">
+							<div class="main__cate__head__add-cate flex-container justify-space-between align-items-center">
+								<h2 class="main__cate__head__add-cate__title">{% trans 'Add category' %}</h2>
+
+								<button @click="addStateSwitch" class="main__cate__head__add-cate__add-btn"></button>
+							</div>
+						</div>
+
+						<div class="main__cate__body">
+							<div class="main__cate__body__not-cate flex-container-combo3" v-if="Object.keys(placemarks).length <= 0">
+								<p>{% trans 'This project has no pins on the map' %}</p>
+							</div>
+
+							<ul class="main__cate__body__items" v-else>
+								<li :class="['main__cate__body__item', 'unselectable', {'main__cate_selected': (activeCateId === cateId)}]" 
+									 v-for="(pins, cateId) in placemarks" 
+									 v-bind:key="cateId">
+									
+									 <div class="main__cate__body__item__cate-container flex-container-combo2 justify-space-between pointer">
+										<div class="main__cate__body__item__cate-info flex-container gap-24 align-items-center" @click="choicePin(cateId)">
+											<img :src="getCateMeta(cateId, 'icon')" alt="cate-icon" class="main__cate__body__item__cate-icon">
+											<span class="main__cate__body__item__cate-txt">{* getCateMeta(cateId, 'title') *}</span>
+										</div>
+										
+										<div class="main__cate__body__item__cate-count flex-container-combo3 gap-16">
+											<span class="main__cate__body__item__cate-txt">
+												{* Object.keys(pins).length *}
+											</span>
+
+											<button @click="delCate(cateId)" class="main__cate__body__item__cate-del-btn"></button>
+										</div> 
+									</div>
+
+									<!-- <Transition :duration="250" name="slide-fade"> -->
+									<div class="main__cate__body__item__sub-items" v-if="activeCateId == cateId">
+										<div class="item__sub__not-found-txt" v-if="Object.keys(pins).length <= 0">
+											<p>{% trans 'Area is for displaying pins' %}</p>
+										</div>
+
+										<div v-else>
+											<div class="main__cate__body__item__sub-item flex-container-combo2 justify-space-between" v-for="pinId, index in Object.keys(pins)" v-bind:key="index">
+												<div class="main__cate__body__item__cate-info flex-container gap-16 align-items-center">
+													<img src="{% static 'img/location.svg' %}" alt="cate-icon" class="main__cate__body__item__sub-icon">
+													<span class="main__cate__body__item__sub-txt">Пин - {* index + 1 *}</span>
+												</div>
+
+												<div class="main__cate__body__item_sub-item__del-block">
+													<button @click="delPlace(index)" class="main__cate__body__item__cate-del-btn">
+													</button>
+												</div>
+											</div>
+										</div>
+									</div>
+									<!-- </Transition>cate-add__body__btn-item-act -->
+								</li>
+							</ul>
+						</div>
+
+						<div class="main__cate__save-btn-block" v-if="placemarksCount > 0">
+							<button v-bind:class="['cl-btn-style', {'btn-req-style': reqState}]" @click="sendPlacemarksToServ">
+								{% trans 'Save' %}
+							</button>
+						</div>
+					</div>
+				</div>
+				
+				<!-- Map block -->
+				<div class="main__map-block">
+					<div id="map" style="width: 100%; height: 100%;"></div>
+				</div>
+			</div>
+		</main>   
+	</div> 
+
+	<script>
+		let map = null;
+		let activeCateId = ref(null);
+		// let projectCors = ref('')
+		const placemarks = reactive(JSON.parse('{{ placemarks | escapejs }}'));
+		const lat= parseFloat('{{ lat | escapejs }}');
+		const lon = parseFloat('{{ lon | escapejs }}');
+		const cateMeta = reactive(JSON.parse('{{ cats | escapejs }}'));
+
+		createApp({
+			delimiters: ['{*', '*}'],
+			setup() {
+				const placemarksCount = computed(() => Object.keys(placemarks).length);
+
+				return {
+					activeCateId,
+					placemarks,
+					placemarksCount,
+				}
+			},
+			data(){
+				return {
+					pushTxt: null,
+					reqState: false,
+					addState: false,
+					cateMeta: JSON.parse('{{ cats | escapejs }}'),
+					csrfToken: document.querySelector('input[name="csrfmiddlewaretoken"]').value
+				}
+			},
+
+			methods:{
+				addStateSwitch(){
+					this.addState = !this.addState;
+				},
+
+				placemarkIsExist(cateId){
+					return Object.keys(this.placemarks).indexOf(cateId) > -1;
+				},
+
+				delPlace(pinIndex){
+					removePlacemarkByIndex(pinIndex, this.activeCateId);
+				},
+
+				addCate(cateId){
+					if (this.getCateMeta(cateId) && !this.placemarks[cateId])
+						this.placemarks[cateId] = [];
+				},
+
+				delCate(cateId){
+					delete this.placemarks[cateId];
+					this.choicePin(null);
+				},
+
+				getCateMeta(cateId, fieldName=null, default_=null){
+					const placemark = this.cateMeta[cateId]
+
+					if (!placemark)
+						return default_;
+
+					return (!fieldName) ? placemark : placemark[fieldName] || default_;
+				},
+
+				pushNotif(msg){
+					this.pushTxt = msg;
+					const pushWin = document.querySelector('.infra-location-map__push');
+
+					if (!pushWin)
+						return 0;
+
+					pushWin.classList.add('push__active')
+
+					setTimeout(() => pushWin.classList.remove('push__active'), 2500)
+				},
+
+				choicePin(cateId){
+					if (cateId == this.activeCateId )
+						return null;
+
+					this.activeCateId = cateId;
+					clearPlacemarks(activeCateId)
+
+					if (this.activeCateId)
+						addPlacemarkFromPlacemarks(this.activeCateId)
+				},
+
+				sendPlacemarksToServ() {
+					if (this.reqState) return null;
+
+					let requestData = {};
+					this.reqState = true; // Включаем preloader
+
+					for (const [catId, placemarks] of Object.entries(this.placemarks))
+						requestData[catId] = Object.values(placemarks);
+
+					fetch(window.location.href, {
+						method: 'POST',
+						headers: { 
+							'Content-Type': 'application/json',
+							'X-CSRFToken': this.csrfToken // Включаем CSRF-токен в заголовок
+						},
+						body: JSON.stringify(requestData)
+					})
+					.finally(
+						() => { 
+							this.reqState = false;
+							this.pushNotif("Запись успешно сохранена")
+						}
+					); // Отключаем preloader в любом случае
+				}
+
+			},
+		}).mount('#infra-location-map')
+
+
+		// Map logic
+
+		function clearPlacemarks() {
+			const firstObject = map.geoObjects.get(0); // Сохраняем первый объект
+			map.geoObjects.removeAll(); // Удаляем все объекты
+			map.geoObjects.add(firstObject); // Добавляем первый объект обратно
+		}
+
+		function areArraysEqual(arr1, arr2, tolerance = 0.0001) {
+			if (arr1.length !== arr2.length) {
+				return false;
+			}
+			
+			return arr1.every((value, index) => {
+				return Math.abs(value - arr2[index]) < tolerance;
+			});
+		}
+
+
+		function addPlacemarkToMap(placemark){
+			map.geoObjects.add(placemark);				
+
+			placemark.events.add("click", function () {
+				removePlacemark(placemark);
+			});
+		}
+
+		function removePlacemarkByIndex(placemarkIndex, cateId){
+			const placemark = map.geoObjects.get(placemarkIndex);
+
+			if (!activeCateId || !placemarks[cateId] || !placemark) {
+				return;
+			}
+
+			map.geoObjects.remove(placemark);
+			placemarks[cateId].splice(placemarkIndex, 1);
+		}
+
+		function addPlacemarkFromPlacemarks(cateId){
+			let localPlacemarks = placemarks[cateId] || {}; 
+		
+			for (const [placemarkId, coords] of Object.entries(localPlacemarks)){
+				addPlacemarkToMap(
+					getCustumPlacemark(coords)
+				)
+			}
+		}
+
+		function addPlacemark(coords, cateId) { 
+			// const placeMarkMeta = cateMeta[activeCateId.value];
+			// , {iconHref: placeMarkMeta.icon}
+
+			let placemark = getCustumPlacemark(coords)
+
+			if (!placemarks[cateId])
+				placemarks[cateId] = []
+
+			placemarks[cateId].push(coords);
+			addPlacemarkToMap(placemark)
+		}
+
+		function removePlacemark(placemark) {
+			if (!activeCateId.value)
+				return
+
+			const placemarksLink = placemarks[activeCateId.value];
+			const placemarkId = placemark.properties.get('placemarkId');
+
+			if (placemarksLink){
+				for (const index in placemarksLink){
+					if (areArraysEqual(placemarksLink[index], placemark.geometry.getCoordinates())){
+						placemarksLink.splice(index, 1);
+						break;
+					}
+				}
+			}
+
+			map.geoObjects.remove(placemark);
+		}
+
+		const custumProjectPlacmarkLayout = (ymaps) => {
+			return ymaps.templateLayoutFactory.createClass(
+				`<div class="project-placemark" style="background-image: url('{{ project_image }}');"></div>`, // Кастомный балун
+				{
+					// Дополнительные действия после отрисовки метки
+					build: function () {
+						this.constructor.superclass.build.call(this); // Правильный доступ к `superclass`
+					},
+					
+					// Очистка метки (если требуется)
+					clear: function() {
+						this.constructor.superclass.clear.call(this); // Правильный доступ к `superclass`
+					}
+				}
+			)
+		}
+
+		document.addEventListener('DOMContentLoaded', function() {
+			ymaps.ready((initMap) => {
+				map = new ymaps.Map("map", {
+					center: [lat, lon],
+					zoom: 14
+				});
+
+				const projectPlaceMark = new ymaps.Placemark([lat, lon],
+					{
+						// backgroundImage: projectData.title_image,
+						// projectName: projectName
+					},
+					{
+						// balloonLayout: createCustomProjectBalloonLayout(ymaps),  // Подключаем кастомный балун
+						hideIconOnBalloonOpen: false,        // Не скрывать иконку метки
+						balloonPanelMaxMapArea: 0,            // Отображаем балун всегда
+						iconLayout: custumProjectPlacmarkLayout(ymaps), // Указываем кастомный макет
+						iconShape: {
+							type: 'Rectangle',
+							coordinates: [[-25, -25], [25, 25]]
+						},
+						// balloonOffset: [-32.5, -32.5]  // Смещение: [по горизонтали, по вертикали]	
+				});
+
+				map.events.add("click", function (e) {
+					if (!activeCateId.value)
+						return
+
+					var coords = e.get("coords"); 
+					addPlacemark(coords, activeCateId.value);
+				});
+
+				map.geoObjects.add(projectPlaceMark)
+			});
+		});
+	</script>
+</body>
+</html>

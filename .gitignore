@@ -1,0 +1,51 @@
+# Исключить все файлы и папки IDE
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.user
+
+# Исключить системные файлы
+.DS_Store
+Thumbs.db
+
+# Исключить логи
+*.log
+
+# Исключить компилированные файлы
+*.class
+*.dll
+*.exe
+*.o
+*.so
+
+# Исключить кеши и временные файлы
+*.pyc
+*.pyo
+*.pyc/
+__pycache__/
+
+# Исключить файлы окружения
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+media
+# settings.py
+
+# Исключить различные файлы конфигурации
+*.bak
+*.old
+*.orig
+
+# Исключить миграции Django
+*.pyc
+__pycache__/
+db.sqlite3
+
+# Исключить виртуальное окружение
+venv/
