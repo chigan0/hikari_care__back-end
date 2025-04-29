@@ -35,7 +35,7 @@ __pycache__/
 .env.production.local
 
 media
-# settings.py
+settings.py
 
 # Исключить различные файлы конфигурации
 *.bak
